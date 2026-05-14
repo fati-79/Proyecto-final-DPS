@@ -4,108 +4,101 @@ const db = require('../db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
+const verificarToken = require('../middleware/authMiddleware');
+const verificarAdmin = require('../middleware/adminMiddleware');
+
+
 const SECRET_KEY = 'gestioncitas_secret';
 
-router.post('/registro', async (req, res) => {
+router.post('/registro', (req, res) => {
     const { nombre, correo, password, rol, telefono } = req.body;
 
-    // VALIDAR CAMPOS VACÍOS
-    if (!nombre || !correo || !password || !rol || !telefono) {
+   // VALIDAR CAMPOS VACÍOS
+if (!nombre || !correo || !password || !rol || !telefono) {
+    return res.status(400).json({
+        mensaje: 'Todos los campos son obligatorios'
+    });
+}
+
+// VALIDAR NOMBRE (solo letras y espacios)
+const nombreRegex = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$/;
+if (!nombreRegex.test(nombre)) {
+    return res.status(400).json({
+        mensaje: 'El nombre solo debe contener letras'
+    });
+}
+
+// VALIDAR CORREO
+const correoRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+if (!correoRegex.test(correo)) {
+    return res.status(400).json({
+        mensaje: 'Correo electrónico no válido'
+    });
+}
+
+// VALIDAR PASSWORD
+if (password.length < 6) {
+    return res.status(400).json({
+        mensaje: 'La contraseña debe tener al menos 6 caracteres'
+    });
+}
+
+// VALIDAR TELÉFONO
+const telefonoRegex = /^[0-9]{8}$/;
+if (!telefonoRegex.test(telefono)) {
+    return res.status(400).json({
+        mensaje: 'El teléfono debe tener exactamente 8 números'
+    });
+}
+
+   // VERIFICAR SI EL CORREO YA EXISTE
+const verificarCorreoSql = 'SELECT * FROM usuarios WHERE correo = ?';
+
+db.query(verificarCorreoSql, [correo], (err, results) => {
+    if (err) {
+        return res.status(500).json({
+            mensaje: 'Error al verificar correo',
+            error: err
+        });
+    }
+
+    if (results.length > 0) {
         return res.status(400).json({
-            mensaje: 'Todos los campos son obligatorios'
+            mensaje: 'El correo ya está registrado'
         });
     }
 
-    // VALIDAR NOMBRE (solo letras y espacios)
-    const nombreRegex = /^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+$/;
-    if (!nombreRegex.test(nombre)) {
-        return res.status(400).json({
-            mensaje: 'El nombre solo debe contener letras'
+    bcrypt.hash(password, 10, (err, hashedPassword) => {
+    if (err) {
+        return res.status(500).json({
+            mensaje: 'Error al encriptar contraseña',
+            error: err
         });
     }
 
-    // VALIDAR CORREO
-    const correoRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!correoRegex.test(correo)) {
-        return res.status(400).json({
-            mensaje: 'Formato de correo inválido'
+    // INSERTAR NUEVO USUARIO
+    const sql = `
+        INSERT INTO usuarios (nombre, correo, password, rol, telefono)
+        VALUES (?, ?, ?, ?, ?)
+    `;
+
+    db.query(sql, [nombre, correo, hashedPassword, rol, telefono], (err, result) => {
+        if (err) {
+            return res.status(500).json({
+                mensaje: 'Error al registrar usuario',
+                error: err
+            });
+        }
+
+        res.status(201).json({
+            mensaje: 'Usuario registrado correctamente'
         });
-    }
-
-    // VALIDAR CONTRASEÑA
-    if (password.length < 6) {
-        return res.status(400).json({
-            mensaje: 'La contraseña debe tener al menos 6 caracteres'
-        });
-    }
-
-    // VALIDAR ROL
-    const rolesPermitidos = ['paciente', 'doctor', 'admin'];
-    if (!rolesPermitidos.includes(rol)) {
-        return res.status(400).json({
-            mensaje: 'Rol no válido'
-        });
-    }
-
-    // VALIDAR TELÉFONO (solo números, 8 dígitos)
-    const telefonoRegex = /^[0-9]{8}$/;
-    if (!telefonoRegex.test(telefono)) {
-        return res.status(400).json({
-            mensaje: 'El teléfono debe contener exactamente 8 números'
-        });
-    }
-
-    try {
-        // VERIFICAR SI CORREO YA EXISTE
-        db.query(
-            'SELECT * FROM usuarios WHERE correo = ?',
-            [correo],
-            async (err, results) => {
-                if (err) {
-                    return res.status(500).json({
-                        mensaje: 'Error del servidor'
-                    });
-                }
-
-                if (results.length > 0) {
-                    return res.status(400).json({
-                        mensaje: 'El correo ya está registrado'
-                    });
-                }
-
-                const hashedPassword = await bcrypt.hash(password, 10);
-
-                const sql = `
-                    INSERT INTO usuarios (nombre, correo, password, rol, telefono)
-                    VALUES (?, ?, ?, ?, ?)
-                `;
-
-                db.query(
-                    sql,
-                    [nombre, correo, hashedPassword, rol, telefono],
-                    (err, result) => {
-                        if (err) {
-                            return res.status(500).json({
-                                mensaje: 'Error al registrar usuario',
-                                error: err
-                            });
-                        }
-
-                        res.status(201).json({
-                            mensaje: 'Usuario registrado correctamente'
-                        });
-                    }
-                );
-            }
-        );
-
-    } catch (error) {
-        res.status(500).json({
-            mensaje: 'Error interno del servidor',
-            error
-        });
-    }
+    });
 });
+});
+
+});
+  
 
 router.post('/login', (req, res) => {
     const { correo, password } = req.body;
@@ -151,7 +144,7 @@ router.post('/login', (req, res) => {
         });
     });
 });
-router.get('/usuarios', (req, res) => {
+router.get('/usuarios', verificarToken, verificarAdmin, (req, res) => {
     const sql = 'SELECT id, nombre, correo, rol, telefono, fecha_registro FROM usuarios';
 
     db.query(sql, (err, results) => {
