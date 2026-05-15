@@ -1,6 +1,5 @@
 const verificarAdmin = (req, res, next) => {
-    console.log('ROL DETECTADO:', req.usuario.rol);
-
+    // Validar rol de administrador
     if (req.usuario.rol !== 'admin') {
         return res.status(403).json({
             mensaje: 'Acceso solo para administradores'
