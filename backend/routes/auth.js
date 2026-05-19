@@ -10,7 +10,7 @@ const verificarAdmin = require('../middleware/adminMiddleware');
 const SECRET_KEY = 'gestioncitas_secret';
 
 // Registro de usuarios
-router.post('/registro', (req, res) => {
+router.post('/register', async (req, res) => {
     const { nombre, correo, password, rol, telefono } = req.body;
 
     // Validar campos vacíos
